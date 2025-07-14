@@ -80,9 +80,8 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "🛠️ Elige calidad:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        elif "twitch.tv" in url:
+            
+        elif "twitch.tv" in url:  # <-- Asegúrate de que este elif está alineado con el if
             formats = get_twitch_formats(url)
             keyboard = [
                 [InlineKeyboardButton(fmt["quality"], callback_data=f"twitch_{fmt['format_id']}")]
@@ -90,18 +89,18 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await update.message.reply_text(
                 "🎮 Elige calidad para Twitch:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-        
-        elif "spotify.com" in url:
+                reply_markup=InlineKeyboardMarkup(keyboard))
+            
+        elif "spotify.com" in url:  # <-- Este elif debe estar al mismo nivel
             await update.message.reply_text("🔍 Usa /spotify_search para buscar en Spotify.")
-        
+            
         else:
             await update.message.reply_text("❌ Plataforma no soportada aún.")
 
     except Exception as e:
         logger.error(f"Error al procesar enlace: {e}")
         await update.message.reply_text("❌ Error al procesar el enlace.")
-
+        
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
