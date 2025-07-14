@@ -85,7 +85,22 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for fmt in formats[:5]
             ]
             await update.message.reply_text(
-                "🛠️ Elige calidad:",
+                "🛠️ Elige calidad para YouTube:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        elif "facebook.com" in url:
+            formats = get_available_formats(url)
+            if not formats:
+                await update.message.reply_text("❌ No se encontraron formatos disponibles para Facebook.")
+                return
+
+            keyboard = [
+                [InlineKeyboardButton(fmt["resolution"], callback_data=f"video_{fmt['format_id']}")]
+                for fmt in formats[:5]
+            ]
+            await update.message.reply_text(
+                "📘 Elige calidad para Facebook:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
 
@@ -153,7 +168,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error en descarga: {e}")
         await query.edit_message_text(text="❌ Error al descargar.")
 
-# Punto de entrada
+# Main
 def main():
     try:
         logger.info("🚀 Iniciando bot...")
