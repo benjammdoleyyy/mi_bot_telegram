@@ -2,17 +2,13 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    filters
+    ApplicationBuilder, CommandHandler,
+    MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
 )
-from utils import get_available_formats, download_media, get_twitch_formats
-from spotify import search_spotify, download_spotify_track
+from utils import get_youtube_formats, download_youtube_video
 
-# Configuración del token
+# Configuración del bot
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("❌ ¡TELEGRAM_TOKEN no está configurado!")
@@ -24,15 +20,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Mensaje de bienvenida (formato HTML seguro)
+# Mensajes
 WELCOME_MSG = """
-<b>🌟 Bot de Descargas Premium 🌟</b>
-✅ <b>Soporta</b>: YouTube, Instagram, Twitch, Spotify, Facebook, TikTok.
+<b>🤖 Bot de Descargas YouTube</b>
+Envíame un enlace de YouTube y elige la calidad para descargar.
 
-📌 <b>Comandos:</b>
-/start - Muestra este mensaje  
-/help - Ayuda rápida  
-/spotify_search &lt;query&gt; - Busca en Spotify
+<b>Comandos disponibles:</b>
+/start - Mostrar este mensaje
+/help - Ayuda rápida
 """
 
 # /start
@@ -41,151 +36,79 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ℹ️ Envíame un enlace o usa /spotify_search.")
+    await update.message.reply_text("ℹ️ Envíame un enlace válido de YouTube.")
 
-# /spotify_search
-async def spotify_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = " ".join(context.args)
-    if not query:
-        await update.message.reply_text("🔍 Usa: /spotify_search <canción/artista>")
+# Manejador principal
+async def handle_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text.strip()
+    if "youtube.com" not in url and "youtu.be" not in url:
+        await update.message.reply_text("❌ Solo se permite YouTube por ahora.")
         return
 
     try:
-        results = search_spotify(query)
-        if not results:
-            await update.message.reply_text("❌ No se encontraron resultados.")
+        formats = get_youtube_formats(url)
+        if not formats:
+            await update.message.reply_text("❌ No se encontraron formatos disponibles.")
             return
 
         keyboard = [
-            [InlineKeyboardButton(f"{track['name']} - {track['artist']}", callback_data=f"spotify_{track['id']}")]
-            for track in results[:5]
+            [InlineKeyboardButton(fmt["resolution"], callback_data=f"yt_{fmt['format_id']}")]
+            for fmt in formats
         ]
         await update.message.reply_text(
-            "🎵 Resultados en Spotify:",
+            "🎥 Elige la calidad de descarga:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-    except Exception as e:
-        logger.error(f"Error en Spotify: {e}")
-        await update.message.reply_text("❌ Error al buscar en Spotify.")
 
-# Procesamiento de enlaces
-async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text
-    logger.info(f"Procesando enlace: {url}")
-
-    try:
-        if "youtube.com" in url or "youtu.be" in url:
-            formats = get_available_formats(url)
-            if not formats:
-                await update.message.reply_text("❌ No se encontraron formatos disponibles.")
-                return
-
-            keyboard = [
-                [InlineKeyboardButton(fmt["resolution"], callback_data=f"video_{fmt['format_id']}")]
-                for fmt in formats[:5]
-            ]
-            await update.message.reply_text(
-                "🛠️ Elige calidad para YouTube:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        elif "facebook.com" in url:
-            formats = get_available_formats(url)
-            if not formats:
-                await update.message.reply_text("❌ No se encontraron formatos disponibles para Facebook.")
-                return
-
-            keyboard = [
-                [InlineKeyboardButton(fmt["resolution"], callback_data=f"video_{fmt['format_id']}")]
-                for fmt in formats[:5]
-            ]
-            await update.message.reply_text(
-                "📘 Elige calidad para Facebook:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        elif "twitch.tv" in url:
-            formats = get_twitch_formats(url)
-            if not formats:
-                await update.message.reply_text("❌ No se encontraron formatos disponibles para Twitch.")
-                return
-
-            keyboard = [
-                [InlineKeyboardButton(fmt["quality"], callback_data=f"twitch_{fmt['format_id']}")]
-                for fmt in formats[:3]
-            ]
-            await update.message.reply_text(
-                "🎮 Elige calidad para Twitch:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-
-        elif "spotify.com" in url:
-            await update.message.reply_text("🔍 Usa /spotify_search para buscar en Spotify.")
-
-        else:
-            await update.message.reply_text("❌ Plataforma no soportada aún.")
+        context.user_data["youtube_url"] = url
 
     except Exception as e:
-        logger.error(f"Error al procesar enlace: {e}")
-        await update.message.reply_text("❌ Error al procesar el enlace.")
+        logger.error(f"Error procesando enlace de YouTube: {e}")
+        await update.message.reply_text("❌ Error al procesar el video.")
 
-# Manejo de botones
+# Botón de descarga
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
+    if not data.startswith("yt_"):
+        await query.edit_message_text("❌ Acción no reconocida.")
+        return
+
+    format_id = data.split("_")[1]
+    url = context.user_data.get("youtube_url")
+    if not url:
+        await query.edit_message_text("❌ No se encontró el enlace original.")
+        return
+
     try:
-        file_path = None
-        if data.startswith("video_"):
-            format_id = data.split("_")[1]
-            url = query.message.reply_to_message.text
-            await query.edit_message_text(text="⏳ Descargando video...")
-            file_path = download_media(url, format_id)
+        await query.edit_message_text("⏳ Descargando video...")
+        file_path = download_youtube_video(url, format_id)
+        if not file_path:
+            await query.edit_message_text("❌ Falló la descarga.")
+            return
 
-        elif data.startswith("twitch_"):
-            format_id = data.split("_")[1]
-            url = query.message.reply_to_message.text
-            await query.edit_message_text(text="⏳ Descargando de Twitch...")
-            file_path = download_media(url, format_id, platform="twitch")
-
-        elif data.startswith("spotify_"):
-            track_id = data.split("_")[1]
-            await query.edit_message_text(text="⏳ Descargando de Spotify...")
-            file_path = download_spotify_track(track_id)
-
-        if file_path:
-            with open(file_path, 'rb') as file:
-                if data.startswith("spotify_"):
-                    await query.message.reply_audio(file, caption="✅ ¡Audio descargado!")
-                else:
-                    await query.message.reply_video(file, caption="✅ ¡Video descargado!")
-            os.remove(file_path)
-        else:
-            await query.edit_message_text(text="❌ Error en la descarga.")
+        with open(file_path, "rb") as file:
+            await query.message.reply_video(file, caption="✅ ¡Video descargado!")
+        os.remove(file_path)
 
     except Exception as e:
-        logger.error(f"Error en descarga: {e}")
-        await query.edit_message_text(text="❌ Error al descargar.")
+        logger.error(f"Error al descargar: {e}")
+        await query.edit_message_text("❌ Error en la descarga.")
 
-# Main
+# main()
 def main():
-    try:
-        logger.info("🚀 Iniciando bot...")
-        app = ApplicationBuilder().token(TOKEN).build()
+    logger.info("🚀 Iniciando bot de YouTube...")
+    app = ApplicationBuilder().token(TOKEN).build()
 
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("help", help_command))
-        app.add_handler(CommandHandler("spotify_search", spotify_search))
-        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download))
-        app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_youtube))
+    app.add_handler(CallbackQueryHandler(button_handler))
 
-        logger.info("🤖 Bot listo para recibir mensajes...")
-        app.run_polling()
-
-    except Exception as e:
-        logger.critical(f"CRASH: {e}", exc_info=True)
-        raise
+    logger.info("✅ Bot en ejecución.")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
