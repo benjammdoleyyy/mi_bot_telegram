@@ -3,19 +3,15 @@ import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     Updater, CommandHandler, MessageHandler, Filters,
-    CallbackContext, CallbackQueryHandler, ConversationHandler
+    CallbackContext, CallbackQueryHandler
 )
 from utils import download_media, get_available_formats, get_twitch_formats
 from spotify import search_spotify, download_spotify_track
 
 # Configuración
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
-PORT = int(os.environ.get("PORT", 8443))
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
-
-# Estados
-SELECTING_QUALITY = range(1)
 
 # Mensajes
 WELCOME_MSG = """
@@ -41,12 +37,12 @@ def spotify_search(update: Update, context: CallbackContext):
     if not query:
         update.message.reply_text("🔍 Usa: /spotify_search <canción/artista>")
         return
-    
+
     results = search_spotify(query)
     if not results:
         update.message.reply_text("❌ No se encontraron resultados.")
         return
-    
+
     keyboard = [
         [InlineKeyboardButton(f"{track['name']} - {track['artist']}", callback_data=f"spotify_{track['id']}")]
         for track in results[:5]
@@ -75,7 +71,7 @@ def handle_download(update: Update, context: CallbackContext):
 def button_handler(update: Update, context: CallbackContext):
     query = update.callback_query
     data = query.data
-    
+
     if data.startswith("twitch_"):
         format_id = data.split("_")[1]
         url = query.message.reply_to_message.text
@@ -87,7 +83,7 @@ def button_handler(update: Update, context: CallbackContext):
         format_id = data.split("_")[1]
         url = query.message.reply_to_message.text
         file_path = download_media(url, format_id)
-    
+
     if file_path:
         with open(file_path, 'rb') as file:
             query.message.reply_document(file, caption="✅ ¡Descarga completada!")
@@ -106,13 +102,8 @@ def main():
     dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_download))
     dp.add_handler(CallbackQueryHandler(button_handler))
 
-    # Webhook para Heroku
-    updater.start_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        url_path=TOKEN,
-        webhook_url=f"https://your-app-name.herokuapp.com/{TOKEN}"
-    )
+    # 🚀 Modo polling para Railway (no requiere webhook)
+    updater.start_polling()
     updater.idle()
 
 if __name__ == "__main__":
