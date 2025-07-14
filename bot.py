@@ -12,19 +12,19 @@ from telegram.ext import (
 from utils import get_available_formats, download_media, get_twitch_formats
 from spotify import search_spotify, download_spotify_track
 
-# Configuración
+# Configuración del token
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("❌ ¡TELEGRAM_TOKEN no está configurado!")
 
-# Logging
+# Configuración de logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Mensajes
+# Mensaje de bienvenida
 WELCOME_MSG = """
 🌟 *Bot de Descargas Premium* 🌟
 ✅ **Soporta**: YouTube, Instagram, Twitch, Spotify, Facebook, TikTok.
@@ -35,13 +35,15 @@ WELCOME_MSG = """
 /spotify_search <query> - Busca en Spotify
 """
 
-# Handlers
+# Comando /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(WELCOME_MSG, parse_mode="Markdown")
 
+# Comando /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ Envíame un enlace o usa /spotify_search.")
 
+# Comando /spotify_search
 async def spotify_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     if not query:
@@ -61,10 +63,13 @@ async def spotify_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "🎵 Resultados en Spotify:",
             reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
     except Exception as e:
         logger.error(f"Error en Spotify: {e}")
         await update.message.reply_text("❌ Error al buscar en Spotify.")
 
+# Manejo de enlaces para descarga
 async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     logger.info(f"Procesando enlace: {url}")
@@ -83,7 +88,8 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "🛠️ Elige calidad:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
-        
+            )
+
         elif "twitch.tv" in url:
             formats = get_twitch_formats(url)
             if not formats:
@@ -96,11 +102,12 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
             await update.message.reply_text(
                 "🎮 Elige calidad para Twitch:",
-                reply_markup=InlineKeyboardMarkup(keyboard))
-        
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
         elif "spotify.com" in url:
             await update.message.reply_text("🔍 Usa /spotify_search para buscar en Spotify.")
-        
+
         else:
             await update.message.reply_text("❌ Plataforma no soportada aún.")
 
@@ -108,6 +115,7 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error al procesar enlace: {e}")
         await update.message.reply_text("❌ Error al procesar el enlace.")
 
+# Manejo de botones InlineKeyboard
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -140,18 +148,18 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     await query.message.reply_video(file, caption="✅ ¡Video descargado!")
             os.remove(file_path)
         else:
-            await query.edit_message_text(text="❌ Error en la descarga")
+            await query.edit_message_text(text="❌ Error en la descarga.")
 
     except Exception as e:
         logger.error(f"Error en descarga: {e}")
-        await query.edit_message_text(text="❌ Error al descargar")
+        await query.edit_message_text(text="❌ Error al descargar.")
 
+# Función principal
 def main():
     try:
         logger.info("🚀 Iniciando bot...")
         app = ApplicationBuilder().token(TOKEN).build()
 
-        # Handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("help", help_command))
         app.add_handler(CommandHandler("spotify_search", spotify_search))
