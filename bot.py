@@ -1,114 +1,99 @@
 import os
 import logging
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import threading
+import re
+from telegram import Update, ChatAction
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler,
-    MessageHandler, CallbackQueryHandler,
-    ContextTypes, filters
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    ContextTypes,
+    filters,
 )
-from utils import get_youtube_formats, download_youtube_video
+from utils import is_valid_instagram_url, fetch_instagram_data
+from dotenv import load_dotenv
 
-# Configuración del bot
-TOKEN = os.environ.get("TELEGRAM_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ ¡TELEGRAM_TOKEN no está configurado!")
+load_dotenv()
 
-# Logging
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+
 logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Mensajes
-WELCOME_MSG = """
-<b>🤖 Bot de Descargas YouTube</b>
-Envíame un enlace de YouTube y elige la calidad para descargar.
 
-<b>Comandos disponibles:</b>
-/start - Mostrar este mensaje
-/help - Ayuda rápida
-"""
-
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_MSG, parse_mode="HTML")
+    welcome_text = (
+        "👋 Welcome to the Instagram Downloader Bot!\n\n"
+        "📩 Send me any *public* Instagram link (post, reel, or IGTV), and I'll fetch the media for you.\n"
+        "⚠️ Make sure the post is *public* and not private.\n\n"
+        "Happy downloading! 🎉"
+    )
+    await update.message.reply_text(welcome_text, parse_mode="Markdown")
 
-# /help
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("ℹ️ Envíame un enlace válido de YouTube.")
 
-# Manejador principal
-async def handle_youtube(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    url = update.message.text.strip()
-    if "youtube.com" not in url and "youtu.be" not in url:
-        await update.message.reply_text("❌ Solo se permite YouTube por ahora.")
-        return
+async def process_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    instagram_post = update.message.text.strip()
 
-    try:
-        formats = get_youtube_formats(url)
-        if not formats:
-            await update.message.reply_text("❌ No se encontraron formatos disponibles.")
-            return
-
-        keyboard = [
-            [InlineKeyboardButton(fmt["resolution"], callback_data=f"yt_{fmt['format_id']}")]
-            for fmt in formats
-        ]
+    if not is_valid_instagram_url(instagram_post):
         await update.message.reply_text(
-            "🎥 Elige la calidad de descarga:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            "❌ Invalid Instagram URL. Please send a valid post, Reel, or IGTV link."
         )
-
-        context.user_data["youtube_url"] = url
-
-    except Exception as e:
-        logger.error(f"Error procesando enlace de YouTube: {e}")
-        await update.message.reply_text("❌ Error al procesar el video.")
-
-# Botón de descarga
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
-
-    if not data.startswith("yt_"):
-        await query.edit_message_text("❌ Acción no reconocida.")
         return
 
-    format_id = data.split("_")[1]
-    url = context.user_data.get("youtube_url")
-    if not url:
-        await query.edit_message_text("❌ No se encontró el enlace original.")
+    await update.message.chat.send_action(action=ChatAction.TYPING)
+
+    progress_message = await update.message.reply_text("⏳ Fetching your media...")
+
+    media_url = fetch_instagram_data(instagram_post)
+    if not media_url:
+        await progress_message.edit_text(
+            "❌ Failed to fetch media. Ensure the post is public and try again."
+        )
         return
+
+    file_ext = "mp4" if "video" in media_url else "jpg"
+    file_name = f"temp_{update.message.chat_id}.{file_ext}"
+
+    import requests
 
     try:
-        await query.edit_message_text("⏳ Descargando video...")
-        file_path = download_youtube_video(url, format_id)
-        if not file_path:
-            await query.edit_message_text("❌ Falló la descarga.")
-            return
+        response = requests.get(media_url, stream=True)
+        response.raise_for_status()
+        with open(file_name, "wb") as f:
+            for chunk in response.iter_content(chunk_size=1024):
+                f.write(chunk)
 
-        with open(file_path, "rb") as file:
-            await query.message.reply_video(file, caption="✅ ¡Video descargado!")
-        os.remove(file_path)
+        with open(file_name, "rb") as media_file:
+            if file_ext == "mp4":
+                await update.message.reply_video(media_file, caption="👾 Downloaded with Instagram Bot")
+            else:
+                await update.message.reply_photo(media_file, caption="👾 Downloaded with Instagram Bot")
 
+        await progress_message.delete()
     except Exception as e:
-        logger.error(f"Error al descargar: {e}")
-        await query.edit_message_text("❌ Error en la descarga.")
+        logger.error(f"Error sending media: {e}")
+        await progress_message.edit_text("❌ Failed to send media. Please try again later.")
+    finally:
+        if os.path.exists(file_name):
+            os.remove(file_name)
 
-# main()
+
+async def download_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    thread = threading.Thread(target=lambda: context.application.create_task(process_download(update, context)))
+    thread.start()
+
+
 def main():
-    logger.info("🚀 Iniciando bot de YouTube...")
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_youtube))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_handler))
 
-    logger.info("✅ Bot en ejecución.")
+    logger.info("🤖 Instagram Downloader Bot started.")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()
