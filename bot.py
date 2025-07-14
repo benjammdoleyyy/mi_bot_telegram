@@ -17,33 +17,33 @@ TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("❌ ¡TELEGRAM_TOKEN no está configurado!")
 
-# Configuración de logging
+# Logging
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Mensaje de bienvenida
+# Mensaje de bienvenida (formato HTML seguro)
 WELCOME_MSG = """
-🌟 *Bot de Descargas Premium* 🌟
-✅ **Soporta**: YouTube, Instagram, Twitch, Spotify, Facebook, TikTok.
+<b>🌟 Bot de Descargas Premium 🌟</b>
+✅ <b>Soporta</b>: YouTube, Instagram, Twitch, Spotify, Facebook, TikTok.
 
-📌 **Comandos**:
-/start - Muestra este mensaje
-/help - Ayuda rápida
-/spotify_search <query> - Busca en Spotify
+📌 <b>Comandos:</b>
+/start - Muestra este mensaje  
+/help - Ayuda rápida  
+/spotify_search &lt;query&gt; - Busca en Spotify
 """
 
-# Comando /start
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(WELCOME_MSG, parse_mode="Markdown")
+    await update.message.reply_text(WELCOME_MSG, parse_mode="HTML")
 
-# Comando /help
+# /help
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("ℹ️ Envíame un enlace o usa /spotify_search.")
 
-# Comando /spotify_search
+# /spotify_search
 async def spotify_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     if not query:
@@ -64,12 +64,11 @@ async def spotify_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎵 Resultados en Spotify:",
             reply_markup=InlineKeyboardMarkup(keyboard)
         )
-
     except Exception as e:
         logger.error(f"Error en Spotify: {e}")
         await update.message.reply_text("❌ Error al buscar en Spotify.")
 
-# Manejo de enlaces para descarga
+# Procesamiento de enlaces
 async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text
     logger.info(f"Procesando enlace: {url}")
@@ -115,7 +114,7 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error al procesar enlace: {e}")
         await update.message.reply_text("❌ Error al procesar el enlace.")
 
-# Manejo de botones InlineKeyboard
+# Manejo de botones
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -154,7 +153,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error en descarga: {e}")
         await query.edit_message_text(text="❌ Error al descargar.")
 
-# Función principal
+# Punto de entrada
 def main():
     try:
         logger.info("🚀 Iniciando bot...")
