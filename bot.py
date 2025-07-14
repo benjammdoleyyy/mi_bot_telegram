@@ -2,88 +2,64 @@ import os
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
-    Updater, CommandHandler, MessageHandler, Filters,
-    CallbackContext, CallbackQueryHandler
+    ApplicationBuilder,  # Nuevo en v20
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,  # Reemplaza CallbackContext
+    filters  # ¡Cambiado de Filters a filters!
 )
 from utils import download_media, get_available_formats, get_twitch_formats
 from spotify import search_spotify, download_spotify_track
 
-# ===== CONFIGURACIÓN =====
+# Configuración
 TOKEN = os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
-    raise ValueError("❌ TELEGRAM_TOKEN no está configurado")
+    raise ValueError("❌ ¡TELEGRAM_TOKEN no está configurado!")
 
-# Logging avanzado
+# Logging (visible en Railway)
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO,
-    handlers=[
-        logging.StreamHandler(),  # Logs en Railway
-        logging.FileHandler('bot.log')  # Backup local (opcional)
-    ]
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-# Mensajes
+# Mensaje de inicio
 WELCOME_MSG = """
 🌟 *Bot de Descargas Premium* 🌟
-✅ **Soporta**: YouTube, Instagram, Twitch, Spotify, Facebook, TikTok.
-
-📌 *Comandos*:
-/start - Muestra este mensaje
-/help - Ayuda rápida
-/spotify_search <query> - Busca en Spotify
-/download <url> - Descarga directa
-/ping - Verifica si el bot está activo
+Envía un enlace de YouTube, Spotify, Twitch, etc.
 """
 
-# ===== HANDLERS =====
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(WELCOME_MSG, parse_mode="Markdown")
+# Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(WELCOME_MSG, parse_mode="Markdown")
 
-def help_command(update: Update, context: CallbackContext):
-    update.message.reply_text("ℹ️ Envíame un enlace o usa /spotify_search.")
+async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    url = update.message.text
+    await update.message.reply_text(f"🔍 Procesando: {url}")
 
-def ping(update: Update, context: CallbackContext):
-    """Mantiene activo el servicio en Railway"""
-    update.message.reply_text("🏓 ¡Pong! Bot activo")
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text(text="✅ Descarga en progreso...")
 
-def error_handler(update: Update, context: CallbackContext):
-    logger.error(f'Error: {context.error}', exc_info=True)
-
-# (Tus otros handlers aquí: spotify_search, handle_download, button_handler...)
-# ... [Mantén el mismo código que ya tenías para estos handlers]
-
-# ===== MAIN =====
+# Main
 def main():
     try:
-        logger.info("🚀 Iniciando bot en modo polling...")
-        
-        updater = Updater(TOKEN, use_context=True)
-        dp = updater.dispatcher
+        logger.info("🚀 Iniciando bot...")
+        app = ApplicationBuilder().token(TOKEN).build()
 
-        # Handlers
-        dp.add_handler(CommandHandler("start", start))
-        dp.add_handler(CommandHandler("help", help_command))
-        dp.add_handler(CommandHandler("ping", ping))
-        dp.add_handler(CommandHandler("spotify_search", spotify_search))
-        dp.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_download))
-        dp.add_handler(CallbackQueryHandler(button_handler))
-        
-        # Manejo de errores
-        dp.add_error_handler(error_handler)
+        # Registra handlers
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download))
+        app.add_handler(CallbackQueryHandler(button_handler))
 
-        # Polling con reinicio automático
-        updater.start_polling(
-            poll_interval=1,
-            timeout=30,
-            drop_pending_updates=True
-        )
-        logger.info("🤖 Bot escuchando comandos...")
-        updater.idle()
+        # Polling
+        logger.info("🤖 Bot listo para recibir mensajes...")
+        app.run_polling()
 
     except Exception as e:
-        logger.critical(f"CRASH: {str(e)}", exc_info=True)
+        logger.critical(f"CRASH: {e}", exc_info=True)
         raise
 
 if __name__ == "__main__":
