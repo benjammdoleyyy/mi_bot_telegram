@@ -56,12 +56,11 @@ async def spotify_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         keyboard = [
             [InlineKeyboardButton(f"{track['name']} - {track['artist']}", callback_data=f"spotify_{track['id']}")]
-            for track in results[:5]  # Mostrar máximo 5 resultados
+            for track in results[:5]
         ]
         await update.message.reply_text(
             "🎵 Resultados en Spotify:",
             reply_markup=InlineKeyboardMarkup(keyboard)
-        )
     except Exception as e:
         logger.error(f"Error en Spotify: {e}")
         await update.message.reply_text("❌ Error al buscar en Spotify.")
@@ -73,6 +72,10 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if "youtube.com" in url or "youtu.be" in url:
             formats = get_available_formats(url)
+            if not formats:
+                await update.message.reply_text("❌ No se encontraron formatos disponibles.")
+                return
+
             keyboard = [
                 [InlineKeyboardButton(fmt["resolution"], callback_data=f"video_{fmt['format_id']}")]
                 for fmt in formats[:5]
@@ -80,9 +83,13 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "🛠️ Elige calidad:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
-            
-        elif "twitch.tv" in url:  # <-- Asegúrate de que este elif está alineado con el if
+        
+        elif "twitch.tv" in url:
             formats = get_twitch_formats(url)
+            if not formats:
+                await update.message.reply_text("❌ No se encontraron formatos disponibles para Twitch.")
+                return
+
             keyboard = [
                 [InlineKeyboardButton(fmt["quality"], callback_data=f"twitch_{fmt['format_id']}")]
                 for fmt in formats[:3]
@@ -90,23 +97,24 @@ async def handle_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "🎮 Elige calidad para Twitch:",
                 reply_markup=InlineKeyboardMarkup(keyboard))
-            
-        elif "spotify.com" in url:  # <-- Este elif debe estar al mismo nivel
+        
+        elif "spotify.com" in url:
             await update.message.reply_text("🔍 Usa /spotify_search para buscar en Spotify.")
-            
+        
         else:
             await update.message.reply_text("❌ Plataforma no soportada aún.")
 
     except Exception as e:
         logger.error(f"Error al procesar enlace: {e}")
         await update.message.reply_text("❌ Error al procesar el enlace.")
-        
+
 async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     data = query.data
 
     try:
+        file_path = None
         if data.startswith("video_"):
             format_id = data.split("_")[1]
             url = query.message.reply_to_message.text
