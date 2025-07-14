@@ -4,21 +4,31 @@ import os
 def get_available_formats(url: str) -> list:
     ydl_opts = {
         'quiet': True,
-        'extract_flat': True,
+        'format': 'bestvideo+bestaudio/best',
+        'merge_output_format': 'mp4',
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             formats = []
+            seen_resolutions = set()
             if 'formats' in info:
                 for fmt in info['formats']:
-                    if fmt.get('height'):
-                        formats.append({
-                            "format_id": fmt['format_id'],
-                            "resolution": f"{fmt['height']}p",
-                            "ext": fmt['ext']
-                        })
-            return formats[:10]  # Limitar a 10 formatos
+                    if (
+                        fmt.get('vcodec') != 'none' and
+                        fmt.get('acodec') != 'none' and
+                        fmt.get('height') and
+                        fmt['ext'] in ('mp4', 'webm')
+                    ):
+                        resolution = f"{fmt['height']}p"
+                        if resolution not in seen_resolutions:
+                            seen_resolutions.add(resolution)
+                            formats.append({
+                                "format_id": fmt['format_id'],
+                                "resolution": resolution,
+                                "ext": fmt['ext']
+                            })
+            return formats[:6]
     except Exception as e:
         print(f"Error al obtener formatos: {e}")
         return []
@@ -51,8 +61,9 @@ def download_media(url: str, format_id: str, platform: str = "youtube") -> str:
 
     ydl_opts = {
         'format': format_id,
-        'outtmpl': f'{download_path}/%(title)s.%(ext)s',
+        'outtmpl': f'{download_path}/%(id)s.%(ext)s',
         'quiet': True,
+        'merge_output_format': 'mp4',
     }
 
     try:
